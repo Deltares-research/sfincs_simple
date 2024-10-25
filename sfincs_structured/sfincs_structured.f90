@@ -1,36 +1,135 @@
-program sfincs_structured
-   !
-   ! use omp_lib
-   !
+module constants
+   real*4, device, parameter  :: g = 9.81
+   real*4, device, parameter  :: zbunif = - 10.0
+   real*4, device, parameter  :: manning = 0.02
+   real*4, device, parameter  :: dx = 10.0
+   real*4, device, parameter  :: dy = 10.0
+   real*4, device, parameter  :: gnavg2 = g * manning * manning
+   real*4, device, parameter  :: expo = 1.0 / 3.0
+   real*4, device, parameter  :: dt =  dx / sqrt(- g * zbunif)
+
+end module
+   
+   module mathOps
+   
+contains
+
+  attributes(global) subroutine saxpy(x, y, a)
+    implicit none
+    real :: x(:), y(:)
+    real, value :: a
+    integer :: i, n
+    n = size(x)
+    i = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    if (i <= n) y(i) = y(i) + a*x(i)
+  end subroutine saxpy 
+  
+    attributes(global) subroutine U(nmax, mmax,dt,zs,zbu,zu0,kcu,qu)
+    use constants
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0, kcu
+    real, dimension(nmax,mmax), intent(out) :: qu
+    real, dimension(nmax,mmax), shared :: zs_shared
+    real, value, intent(in) :: dt
+    integer :: n, m
+
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+    
+   if (n <= nmax && m <= mmax) then
+    zs_shared(n,m) = zs(n,m) !> global to shared copy
+    
+    call syncthreads() 
+    
+    hu = 0.5 * ( zs_shared(n, m + 1) + zs_shared(n, m) ) - zbu(n, m)
+    frc = - g * hu * (zs_shared(n, m + 1) - zs_shared(n, m)) / dx
+    qu(n, m) = (qu0(n, m) + frc * dt * kcu(n, m)) / (1.0 + gnavg2 * dt * kcu(n, m) * abs(qu0(n, m)) / (hu*hu * hu**expo))
+   end if
+  end subroutine U
+  
+   attributes(global) subroutine V(nmax, mmax, dt,zs,zbu,zu0,kcu,qu)
+    use constants
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0, kcu
+    real, dimension(nmax,mmax), intent(out) :: qu
+    real, dimension(nmax,mmax), shared :: zs_shared
+    real, value, intent(in) :: dt
+    integer :: n, m
+    
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+    
+    if (n <= nmax && m <= mmax) then
+      zs_shared(n,m) = zs(n,m) !> global to shared copy
+      
+      call syncthreads() 
+      
+      hv = 0.5 * ( zs_shared(n + 1, m) + zs_shared(n, m) ) - zbv(n, m)
+      frc = - g * hv * (zs_shared(n + 1, m) - zs_shared(n, m)) / dy
+      qv(n, m) = (qv0(n, m) + frc * kcv(n, m)* dt) / (1.0 + gnavg2 * kcv(n, m) * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
+    end if
+   
+  end subroutine V
+  
+     attributes(global) subroutine Z(nmax, mmax, dt, zs, qu, qv, kcs)
+    use constants
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real, dimension(nmax,mmax), intent(in)  :: qu, qv
+    real, dimension(nmax,mmax), intent(inout) :: zs
+    real, dimension(nmax,mmax), shared :: qu_shared, qv_shared
+    real, value, intent(in) :: dt
+    integer :: n, m
+    
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+    
+    if (n <= nmax && m <= mmax) then
+      qu_shared(n,m) = qu(n,m) !> global to shared copy
+      qv_shared(n,m) = qv(n,m) !> global to shared copy
+      
+      call syncthreads() 
+      
+      zs(n, m) = zs(n, m) + kcs(n, m)* dt * ( (qu_shared(n, m - 1) - qu_shared(n, m)) / dx + (qv_shared(n - 1, m) - qv_shared(n, m)) / dy ) 
+    end if
+end subroutine Z
+   
+end module mathOps
+
+   
+   program sfincs_structured
+
+   use cudafor
+   use mathOps
+   
    implicit none
-   !
+
    integer :: num_args, ix
    character(len=12), dimension(:), allocatable :: args
-   !
    integer :: n, m, nmax, mmax, it, nt
    integer*8  :: count0, count1, count_rate, count_max
-   !
-   real*4 :: g, zbunif, manning, dt, dx, dy, gnavg2, hu, hv, frc
+   type(dim3) :: grid, tBlock
    real*8 :: ttotal
-   !
    logical :: copyq, momentum, continuity
-   !
+
+   integer, device, dimension(:,:), allocatable :: kcs_d
+   integer, device, dimension(:,:), allocatable :: kcu_d
+   integer, device, dimension(:,:), allocatable :: kcv_d
    integer, dimension(:,:), allocatable :: kcs
    integer, dimension(:,:), allocatable :: kcu
    integer, dimension(:,:), allocatable :: kcv
-   !
-   real*4, dimension(:,:), allocatable :: zs
-   real*4, dimension(:,:), allocatable :: zb
-   real*4, dimension(:,:), allocatable :: zbu
-   real*4, dimension(:,:), allocatable :: zbv
-   real*4, dimension(:,:), allocatable :: qu
-   real*4, dimension(:,:), allocatable :: qv
-   real*4, dimension(:,:), allocatable :: qu0
-   real*4, dimension(:,:), allocatable :: qv0
-   !
-   real*4, parameter :: expo = 1.0 / 3.0
-   !integer, parameter :: expo = 0   
-   !
+
+   real*4, device, dimension(:,:), allocatable :: zs
+   real*4, device, dimension(:,:), allocatable :: zb
+   real*4, device, dimension(:,:), allocatable :: zbu
+   real*4, device, dimension(:,:), allocatable :: zbv
+   real*4, device, dimension(:,:), allocatable :: qu
+   real*4, device, dimension(:,:), allocatable :: qv
+   real*4, device, dimension(:,:), allocatable :: qu0
+   real*4, device, dimension(:,:), allocatable :: qv0
+
    !call acc_init( acc_device_nvidia )
    !
    ! Read input arguments
@@ -47,18 +146,7 @@ program sfincs_structured
    read(args(4),*)copyq
    read(args(5),*)momentum
    read(args(6),*)continuity
-   !
-   zbunif  = - 10.0
-   manning = 0.02
-   dx      = 10.0
-   dy      = 10.0
-   !
-   g       = 9.81
-   !
-   dt = dx / sqrt(- g * zbunif)
-   !
-   gnavg2 = g * manning**2
-   !
+
    allocate(kcs(nmax, mmax))
    allocate(kcu(nmax, mmax))
    allocate(kcv(nmax, mmax))
@@ -78,19 +166,16 @@ program sfincs_structured
    qv = 0.0   
    qu0 = 0.0
    qv0 = 0.0   
-   ! zb = zbunif
    zbu = zbunif
    zbv = zbunif
-   !
+
    ! Set mask values
-   !
    kcs(1:nmax, 1) = 0
    kcs(1:nmax, mmax) = 0
    kcs(1, 1:mmax) = 0
    kcs(nmax, 1:mmax) = 0
    !
    ! Compute bed level at u and v points and set mask
-   !
    do m = 1, mmax - 1
       do n = 1, nmax - 1
          if (kcs(n, m) == 1 .and. kcs(n, m + 1)) then
@@ -101,97 +186,26 @@ program sfincs_structured
 		   endif		   
       enddo
    enddo  	  
-   !
-   !$acc data, copyin( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv )
-   !
+   
+   kcs_d = kcs
+   kcu_d = kcu
+   kcv_d = kcv
+   
    call system_clock(count0, count_rate, count_max)
-   !
+   
+   tBlock = dim3(32,32,1)
+   grid = dim3(ceiling(real(nmax)/tBlock%x),ceiling(real(mmax)/tBlock%x),1)
+  
    do it = 1, nt   
-      !
-      !$acc parallel, present( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv ), num_gangs( 512 ), vector_length( 128 )
-      !
-      ! Momentum
-      !
       if (copyq) then
-      !$omp parallel &
-      !$omp private ( n, m )
-      !$omp do
-      !$acc loop independent gang
-      do m = 1, mmax
-         !$acc loop independent vector
-         do n = 1, nmax
-            qu0(n, m) = qu(n, m)
-            qv0(n, m) = qv(n, m)
-         enddo		 
-      enddo
-      !$omp end do
-      !$omp end parallel
+         qu0 = qu
+         qv0 = qv
       endif
-      !
       if (momentum) then
-      !$omp parallel &
-      !$omp private ( n, m, hu, hv, frc )
-      !$omp do
-      !$acc loop independent gang
-      do m = 1, mmax 
-         !$acc loop independent vector
-         do n = 1, nmax
-            !
-	         ! U
-            ! 
-            if (kcu(n, m) == 1) then
-               !
-               hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
-               frc = - g * hu * (zs(n, m + 1) - zs(n, m)) / dx
-               qu(n, m) = (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu**2 * hu**expo))
-               !
-            endif
-	         !
-            ! V
-            !  
-            if (kcv(n, m) == 1) then
-               !
-               hv = 0.5 * ( zs(n + 1, m) + zs(n, m) ) - zbv(n, m)
-               frc = - g * hv * (zs(n + 1, m) - zs(n, m)) / dy
-               qv(n, m) = (qv0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
-               !
-            endif
-            !
-         enddo		 
-      enddo
-      !$omp end do
-      !$omp end parallel
       endif
-      !
-      ! Continuity
-      !
       if (continuity) then
-      !$omp parallel &
-      !$omp private ( n, m )
-      !$omp do
-      !$acc loop independent gang
-      do m = 1, mmax
-         !$acc loop independent vector
-         do n = 1, nmax
-	         !
-            if (kcs(n, m) == 1) then
-               !
-               zs(n, m) = zs(n, m) + dt * ( (qu(n, m - 1) - qu(n, m)) / dx + (qv(n - 1, m) - qv(n, m)) / dy ) 
-               !
-	 	      endif
-            !
-         enddo		 
-      enddo    
-      !$omp end do
-      !$omp end parallel
       endif
-      !
-      !$acc end parallel
-      !
    enddo
-   !
-   !$acc end data
-   !
    call system_clock(count1, count_rate, count_max)
    !
    ttotal = 1.0 * (count1 - count0) / count_rate
