@@ -24,7 +24,7 @@ contains
     if (i <= n) y(i) = y(i) + a*x(i)
   end subroutine saxpy 
   
-    attributes(global) subroutine U(nmax, mmax,dt,zs,zbu,zu0,kcu,qu)
+    attributes(global) subroutine U(nmax, mmax, dt, zs, zbu, kcu, qu0, qu)
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
@@ -44,16 +44,16 @@ contains
     
     hu = 0.5 * ( zs_shared(n, m + 1) + zs_shared(n, m) ) - zbu(n, m)
     frc = - g * hu * (zs_shared(n, m + 1) - zs_shared(n, m)) / dx
-    qu(n, m) = (qu0(n, m) + frc * dt * kcu(n, m)) / (1.0 + gnavg2 * dt * kcu(n, m) * abs(qu0(n, m)) / (hu*hu * hu**expo))
+    qu(n, m) = kcu(n, m) * (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu*hu * hu**expo))
    end if
   end subroutine U
   
-   attributes(global) subroutine V(nmax, mmax, dt,zs,zbu,zu0,kcu,qu)
+   attributes(global) subroutine V(nmax, mmax, dt, zs, zbv, kcv, qv0, qv)
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0, kcu
-    real, dimension(nmax,mmax), intent(out) :: qu
+    real, dimension(nmax,mmax), intent(in)  :: zs, zbv, kcv, qv0
+    real, dimension(nmax,mmax), intent(out) :: qv
     real, dimension(nmax,mmax), shared :: zs_shared
     real, value, intent(in) :: dt
     integer :: n, m
@@ -68,7 +68,7 @@ contains
       
       hv = 0.5 * ( zs_shared(n + 1, m) + zs_shared(n, m) ) - zbv(n, m)
       frc = - g * hv * (zs_shared(n + 1, m) - zs_shared(n, m)) / dy
-      qv(n, m) = (qv0(n, m) + frc * kcv(n, m)* dt) / (1.0 + gnavg2 * kcv(n, m) * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
+      qv(n, m) = kcv(n, m) * (qv0(n, m) + frc * dt) / (1.0 + gnavg2  * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
     end if
    
   end subroutine V
@@ -202,8 +202,11 @@ end module mathOps
          qv0 = qv
       endif
       if (momentum) then
+       call U<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbu, kcu_d, qu0, qu)
+       call V<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbv, kcv_d, qv0, qv)
       endif
       if (continuity) then
+        call Z<<<grid, tBlock>>>(nmax, mmax, dt, zs, qu, qv, kcs_d)
       endif
    enddo
    call system_clock(count1, count_rate, count_max)
