@@ -1,12 +1,12 @@
 module constants
-   real*4, device, parameter  :: g = 9.81
-   real*4, device, parameter  :: zbunif = - 10.0
-   real*4, device, parameter  :: manning = 0.02
-   real*4, device, parameter  :: dx = 10.0
-   real*4, device, parameter  :: dy = 10.0
-   real*4, device, parameter  :: gnavg2 = g * manning * manning
-   real*4, device, parameter  :: expo = 1.0 / 3.0
-   real*4, device, parameter  :: dt =  dx / sqrt(- g * zbunif)
+   real, parameter  :: g = 9.81
+   real, parameter  :: zbunif = - 10.0
+   real, parameter  :: manning = 0.02
+   real, parameter  :: dx = 10.0
+   real, parameter  :: dy = 10.0
+   real, parameter  :: gnavg2 = g * manning * manning
+   real, parameter  :: expo = 1.0 / 3.0
+   real, parameter  :: dt =  dx / sqrt(- g * zbunif)
 
 end module
    
@@ -28,16 +28,18 @@ contains
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0, kcu
+    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0
+    integer, dimension(nmax, mmax), intent(in) :: kcu
     real, dimension(nmax,mmax), intent(out) :: qu
     real, dimension(nmax,mmax), shared :: zs_shared
     real, value, intent(in) :: dt
     integer :: n, m
+   real :: hu, frc
 
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
     m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
     
-   if (n <= nmax && m <= mmax) then
+   if (n <= nmax .and. m <= mmax) then
     zs_shared(n,m) = zs(n,m) !> global to shared copy
     
     call syncthreads() 
@@ -52,16 +54,18 @@ contains
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: zs, zbv, kcv, qv0
+    real, dimension(nmax,mmax), intent(in)  :: zs, zbv, qv0
+    integer, dimension(nmax, mmax), intent(in) :: kcv
     real, dimension(nmax,mmax), intent(out) :: qv
     real, dimension(nmax,mmax), shared :: zs_shared
     real, value, intent(in) :: dt
     integer :: n, m
-    
+    real :: hv, frc
+
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
     m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
     
-    if (n <= nmax && m <= mmax) then
+    if (n <= nmax .and. m <= mmax) then
       zs_shared(n,m) = zs(n,m) !> global to shared copy
       
       call syncthreads() 
@@ -78,6 +82,7 @@ contains
     implicit none
     integer, value, intent(in) :: nmax, mmax
     real, dimension(nmax,mmax), intent(in)  :: qu, qv
+    integer, dimension(nmax, mmax), intent(in) :: kcs
     real, dimension(nmax,mmax), intent(inout) :: zs
     real, dimension(nmax,mmax), shared :: qu_shared, qv_shared
     real, value, intent(in) :: dt
@@ -86,7 +91,7 @@ contains
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
     m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
     
-    if (n <= nmax && m <= mmax) then
+    if (n <= nmax .and. m <= mmax) then
       qu_shared(n,m) = qu(n,m) !> global to shared copy
       qv_shared(n,m) = qv(n,m) !> global to shared copy
       
@@ -103,12 +108,13 @@ end module mathOps
 
    use cudafor
    use mathOps
-   
+   use constants
+
    implicit none
 
    integer :: num_args, ix
    character(len=12), dimension(:), allocatable :: args
-   integer :: n, m, nmax, mmax, it, nt
+   integer :: n, m, nmax, mmax, it, nt, istat
    integer*8  :: count0, count1, count_rate, count_max
    type(dim3) :: grid, tBlock
    real*8 :: ttotal
@@ -205,6 +211,7 @@ end module mathOps
        call U<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbu, kcu_d, qu0, qu)
        call V<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbv, kcv_d, qv0, qv)
       endif
+      istat = cudaDeviceSynchronize()
       if (continuity) then
         call Z<<<grid, tBlock>>>(nmax, mmax, dt, zs, qu, qv, kcs_d)
       endif
@@ -220,3 +227,4 @@ end module mathOps
    close(500)
    !
 end program
+!nvfortran sfincs_structured.cuf -O3 -cuda -o sfincs_structured
