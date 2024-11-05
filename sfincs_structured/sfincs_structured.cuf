@@ -243,4 +243,4 @@ end module mathOps
    !
 end program
 !nvfortran sfincs_structured.cuf -O3 -cuda -o sfincs_structured
-!./sfincs_structured 1000 1000 100 false true true
+!./sfincs_structured 1000 1000 100
