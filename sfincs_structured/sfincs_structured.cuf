@@ -1,23 +1,25 @@
 module constants
-   real, parameter  :: g = 9.81
-   real, parameter  :: zbunif = - 10.0
-   real, parameter  :: manning = 0.02
-   real, parameter  :: dx = 10.0
-   real, parameter  :: dy = 10.0
-   real, parameter  :: gnavg2 = g * manning * manning
-   real, parameter  :: expo = 1.0 / 3.0
-   real, parameter  :: dt =  dx / sqrt(- g * zbunif)
+   real(kind=4), parameter  :: g = 9.81
+   real(kind=4), parameter  :: zbunif = - 10.0
+   real(kind=4), parameter  :: manning = 0.02
+   real(kind=4), parameter  :: dx = 10.0
+   real(kind=4), parameter  :: dy = 10.0
+   real(kind=4), parameter  :: gnavg2 = g * manning * manning
+   real(kind=4), parameter  :: expo = 1.0 / 3.0
+   real(kind=4), parameter  :: dt =  dx / sqrt(- g * zbunif)
 
 end module
    
    module mathOps
    
+   implicit none
+   
 contains
 
   attributes(global) subroutine saxpy(x, y, a)
     implicit none
-    real :: x(:), y(:)
-    real, value :: a
+    real(kind=4) :: x(:), y(:)
+    real(kind=4), value :: a
     integer :: i, n
     n = size(x)
     i = blockDim%x * (blockIdx%x - 1) + threadIdx%x
@@ -28,13 +30,13 @@ contains
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0
+    real(kind=4), dimension(nmax,mmax), intent(in)  :: zs, zbu, qu0
     integer, dimension(nmax, mmax), intent(in) :: kcu
-    real, dimension(nmax,mmax), intent(out) :: qu
-    real, dimension(nmax,mmax), shared :: zs_shared
-    real, value, intent(in) :: dt
+    real(kind=4), dimension(nmax,mmax), intent(out) :: qu
+    real(kind=4), dimension(nmax,mmax), shared :: zs_shared
+    real(kind=4), value, intent(in) :: dt
     integer :: n, m
-   real :: hu, frc
+   real(kind=4) :: hu, frc
 
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
     m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
@@ -54,13 +56,13 @@ contains
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: zs, zbv, qv0
+    real(kind=4), dimension(nmax,mmax), intent(in)  :: zs, zbv, qv0
     integer, dimension(nmax, mmax), intent(in) :: kcv
-    real, dimension(nmax,mmax), intent(out) :: qv
-    real, dimension(nmax,mmax), shared :: zs_shared
-    real, value, intent(in) :: dt
+    real(kind=4), dimension(nmax,mmax), intent(out) :: qv
+    real(kind=4), dimension(nmax,mmax), shared :: zs_shared
+    real(kind=4), value, intent(in) :: dt
     integer :: n, m
-    real :: hv, frc
+    real(kind=4) :: hv, frc
 
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
     m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
@@ -81,11 +83,11 @@ contains
     use constants
     implicit none
     integer, value, intent(in) :: nmax, mmax
-    real, dimension(nmax,mmax), intent(in)  :: qu, qv
     integer, dimension(nmax, mmax), intent(in) :: kcs
-    real, dimension(nmax,mmax), intent(inout) :: zs
-    real, dimension(nmax,mmax), shared :: qu_shared, qv_shared
-    real, value, intent(in) :: dt
+    real(kind=4), dimension(nmax,mmax), intent(in)  :: qu, qv
+    real(kind=4), dimension(nmax,mmax), intent(inout) :: zs
+    real(kind=4), dimension(nmax,mmax), shared :: qu_shared, qv_shared
+    real(kind=4), value, intent(in) :: dt
     integer :: n, m
     
     n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
@@ -100,6 +102,18 @@ contains
       zs(n, m) = zs(n, m) + kcs(n, m)* dt * ( (qu_shared(n, m - 1) - qu_shared(n, m)) / dx + (qv_shared(n - 1, m) - qv_shared(n, m)) / dy ) 
     end if
 end subroutine Z
+
+subroutine swap_pointers(ptr1,ptr2)
+
+  real(kind=4), device, dimension(:,:), pointer :: ptr1, ptr2
+  real(kind=4), device, dimension(:,:), pointer ::  temp
+
+  ! Swap the pointers
+  temp => ptr1
+  ptr1 => ptr2
+  ptr2 => temp
+  
+end subroutine swap_pointers
    
 end module mathOps
 
@@ -115,9 +129,9 @@ end module mathOps
    integer :: num_args, ix
    character(len=12), dimension(:), allocatable :: args
    integer :: n, m, nmax, mmax, it, nt, istat
-   integer*8  :: count0, count1, count_rate, count_max
+   integer  :: count0, count1, count_rate, count_max
    type(dim3) :: grid, tBlock
-   real*8 :: ttotal
+   real(kind=4) :: ttotal
    logical :: copyq, momentum, continuity
 
    integer, device, dimension(:,:), allocatable :: kcs_d
@@ -127,16 +141,15 @@ end module mathOps
    integer, dimension(:,:), allocatable :: kcu
    integer, dimension(:,:), allocatable :: kcv
 
-   real*4, device, dimension(:,:), allocatable :: zs
-   real*4, device, dimension(:,:), allocatable :: zb
-   real*4, device, dimension(:,:), allocatable :: zbu
-   real*4, device, dimension(:,:), allocatable :: zbv
-   real*4, device, dimension(:,:), allocatable :: qu
-   real*4, device, dimension(:,:), allocatable :: qv
-   real*4, device, dimension(:,:), allocatable :: qu0
-   real*4, device, dimension(:,:), allocatable :: qv0
+   real(kind=4), device, dimension(:,:), allocatable :: zs
+   real(kind=4), device, dimension(:,:), allocatable :: zb
+   real(kind=4), device, dimension(:,:), allocatable :: zbu
+   real(kind=4), device, dimension(:,:), allocatable :: zbv
+   real(kind=4), device, dimension(:,:), pointer :: qu
+   real(kind=4), device, dimension(:,:), pointer :: qv
+   real(kind=4), device, dimension(:,:), pointer :: qu0
+   real(kind=4), device, dimension(:,:), pointer :: qv0
 
-   !call acc_init( acc_device_nvidia )
    !
    ! Read input arguments
    !
@@ -149,9 +162,9 @@ end module mathOps
    read(args(1),*)nmax
    read(args(2),*)mmax
    read(args(3),*)nt
-   read(args(4),*)copyq
-   read(args(5),*)momentum
-   read(args(6),*)continuity
+   !read(args(4),*)copyq
+   !read(args(5),*)momentum
+   !read(args(6),*)continuity
 
    allocate(kcs(nmax, mmax))
    allocate(kcu(nmax, mmax))
@@ -197,25 +210,27 @@ end module mathOps
    kcu_d = kcu
    kcv_d = kcv
    
-   call system_clock(count0, count_rate, count_max)
-   
    tBlock = dim3(32,32,1)
    grid = dim3(ceiling(real(nmax)/tBlock%x),ceiling(real(mmax)/tBlock%x),1)
   
+   call system_clock(count0, count_rate, count_max)
+      
    do it = 1, nt   
-      if (copyq) then
-         qu0 = qu
-         qv0 = qv
-      endif
-      if (momentum) then
-       call U<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbu, kcu_d, qu0, qu)
-       call V<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbv, kcv_d, qv0, qv)
-      endif
+
+      call swap_pointers(qu0,qu)
+      call swap_pointers(qv0,qv)
+   
+      call U<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbu, kcu_d, qu0, qu)
+      call V<<<grid, tBlock>>>(nmax, mmax, dt, zs, zbv, kcv_d, qv0, qv)
+
       istat = cudaDeviceSynchronize()
-      if (continuity) then
-        call Z<<<grid, tBlock>>>(nmax, mmax, dt, zs, qu, qv, kcs_d)
-      endif
+
+      call Z<<<grid, tBlock>>>(nmax, mmax, dt, zs, qu, qv, kcs_d)
+
+      istat = cudaDeviceSynchronize()
+      
    enddo
+   istat = cudaDeviceSynchronize()
    call system_clock(count1, count_rate, count_max)
    !
    ttotal = 1.0 * (count1 - count0) / count_rate
@@ -228,3 +243,4 @@ end module mathOps
    !
 end program
 !nvfortran sfincs_structured.cuf -O3 -cuda -o sfincs_structured
+!./sfincs_structured 1000 1000 100 false true true
