@@ -57,13 +57,14 @@ program testSaxpy
   use cudafor
   use constants
   implicit none
-  integer, parameter :: N = 4*1024 
+  integer :: N, M, nt, num_args, ix
+  character(len=12), dimension(:), allocatable :: args
   real(kind=4) :: a
   real(kind=4), dimension(:,:), allocatable :: zs,zbu,qu,qu0
   real(kind=4), dimension(:,:), allocatable, device :: zs_d,zbu_d,qu_d,qu0_d
   integer, dimension(:,:), allocatable :: kcu
   integer, dimension(:,:), allocatable, device :: kcu_d
-
+   
   !real(kind=4), dimension(:,:),allocatable, device :: x_d, y_d 
   !real(kind=4), dimension(:,:),allocatable :: x, y
   
@@ -72,8 +73,18 @@ program testSaxpy
   real :: time
   integer :: istat, sharedblock
   
-  !allocate(x(N,N),y(N,N))
-  allocate(zs(N,N),zbu(N,N),qu(N,N),qu0(N,N),kcu(N,N))
+     num_args = command_argument_count()
+   allocate(args(num_args))
+   do ix = 1, num_args
+      call get_command_argument(ix,args(ix))
+   end do
+   !
+   read(args(1),*)n
+   read(args(2),*)m
+   read(args(3),*)nt
+  
+  !allocate(x(N,M),y(N,M))
+  allocate(zs(N,M),zbu(N,M),qu(N,M),qu0(N,M),kcu(N,M))
 
   tBlock = dim3(32,32,1)
   grid = dim3(ceiling(real(N)/tBlock%x),ceiling(real(N)/tBlock%y),1)
@@ -85,8 +96,8 @@ program testSaxpy
   !x = 1.0; y = 2.0; a = 2.0
   !x_d = x; y_d = y
   istat = cudaEventRecord(startEvent, 0)
-  !call saxpy<<<grid, tblock >>>(n,n,x_d, y_d, a)
-  call U<<<grid, tblock >>>(n,n,zs_d,zbu_d,qu_d,qu0_d,kcu_d,dt)
+  !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
+  call U<<<grid, tblock >>>(N,M,zs_d,zbu_d,qu_d,qu0_d,kcu_d,dt)
   istat = cudaEventRecord(stopEvent, 0)
   istat = cudaEventSynchronize(stopEvent)
   istat = cudaEventElapsedTime(time, startEvent, stopEvent)
