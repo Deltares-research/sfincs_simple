@@ -71,6 +71,24 @@ contains
       
   end subroutine V
   
+attributes(global) subroutine update_zs(nmax,mmax, zs, qu, qv, kcs, dt)
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real(kind=4), intent(in), dimension(nmax,mmax) :: qu, qv
+    real(kind=4), intent(out), dimension(nmax,mmax) :: zs
+    integer, intent(in), dimension(nmax,mmax) :: kcs
+    real, intent(in), value :: dt 
+    integer :: n,m
+
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+    
+   if (n > 1 .and. m > 1 .and. n  <= nmax .and. m <= mmax) then
+      zs(n, m) = zs(n, m) + kcs(n, m)* dt * ( (qu(n, m - 1) - qu(n, m)) / dx + (qv(n - 1, m) - qv(n, m)) / dy ) 
+   end if
+      
+  end subroutine update_zs
+  
 end module mathOps
 
 program testSaxpy
@@ -85,8 +103,8 @@ program testSaxpy
   real(kind=4), dimension(:,:), allocatable ::    zbv,qv,qv0
   real(kind=4), dimension(:,:), allocatable, device :: zs_d,zbu_d,qu_d,qu0_d
   real(kind=4), dimension(:,:), allocatable, device ::      zbv_d,qv_d,qv0_d
-  integer, dimension(:,:), allocatable :: kcu, kcv
-  integer, dimension(:,:), allocatable, device :: kcu_d, kcv_d
+  integer, dimension(:,:), allocatable :: kcu, kcv, kcs
+  integer, dimension(:,:), allocatable, device :: kcu_d, kcv_d, kcs_d
    
   !real(kind=4), dimension(:,:),allocatable, device :: x_d, y_d 
   !real(kind=4), dimension(:,:),allocatable :: x, y
@@ -107,24 +125,26 @@ program testSaxpy
    read(args(3),*)nt
   
   !allocate(x(N,M),y(N,M))
-  allocate(zs(N,M),zbu(N,M),qu(N,M),qu0(N,M),kcu(N,M))
-  allocate(        zbv(N,M),qv(N,M),qv0(N,M),kcv(N,M))
+  allocate(zs(N,M),  zbu(N,M),qu(N,M),qu0(N,M),kcu(N,M))
+  allocate(kcs(N,M), zbv(N,M),qv(N,M),qv0(N,M),kcv(N,M))
 
   tBlock = dim3(32,32,1)
   grid = dim3(ceiling(real(N)/tBlock%x),ceiling(real(N)/tBlock%y),1)
   
   istat = cudaEventCreate(startEvent)
   istat = cudaEventCreate(stopEvent)
-  zs = 0; zbu = -10; qu = 0; qu0 = 0; kcu = 1
-          zbv = -10; qv = 0; qv0 = 0; kcv = 1
-  zs_d = zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
-             zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
+  zs = 0;  zbu = -10; qu = 0; qu0 = 0; kcu = 1
+  kcs = 1; zbv = -10; qv = 0; qv0 = 0; kcv = 1
+  zs_d = zs;   zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
+  kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
   !x = 1.0; y = 2.0; a = 2.0
   !x_d = x; y_d = y
   istat = cudaEventRecord(startEvent, 0)
   !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
   call U<<<grid, tblock >>>(N,M,zs_d,zbu_d,qu_d,qu0_d,kcu_d,dt)
   call V<<<grid, tblock >>>(N,M,zs_d,zbv_d,qv_d,qv0_d,kcv_d,dt)
+  istat = cudaDeviceSynchronize()
+  call update_zs<<<grid, tblock >>>(N,M,zs_d, qu_d, qv_d, kcs_d, dt)
   istat = cudaEventRecord(stopEvent, 0)
   istat = cudaEventSynchronize(stopEvent)
   istat = cudaEventElapsedTime(time, startEvent, stopEvent)
