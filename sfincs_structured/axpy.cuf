@@ -1,0 +1,102 @@
+module constants
+   real(kind=4), parameter  :: g = 9.81
+   real(kind=4), parameter  :: zbunif = - 10.0
+   real(kind=4), parameter  :: manning = 0.02
+   real(kind=4), parameter  :: dx = 10.0
+   real(kind=4), parameter  :: dy = 10.0
+   real(kind=4), parameter  :: gnavg2 = g * manning * manning
+   real(kind=4), parameter  :: expo = 1.0 / 3.0
+   real(kind=4), parameter  :: dt =  dx / sqrt(- g * zbunif)
+
+end module
+   
+   module mathOps
+   use constants
+contains
+  attributes(global) subroutine saxpy(nmax,mmax,x, y, a)
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real(kind=4) :: x(nmax,mmax), y(nmax,mmax)
+    real(kind=4), shared :: x_shared_test(32,32)
+    real, value :: a 
+    integer :: n,m
+
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+   if (n <= nmax .and. m <= mmax) then
+      x_shared_test(threadIdx%x,threadIdx%y) = x(n,m)
+      call syncthreads() 
+      y(n,m) = y(n,m) + a*x_shared_test(threadIdx%x,threadIdx%y)
+   end if
+      
+  end subroutine saxpy  
+  
+  attributes(global) subroutine U(nmax,mmax,zs,zbu,qu,qu0,kcu,dt)
+    implicit none
+    integer, value, intent(in) :: nmax, mmax
+    real(kind=4), intent(in), dimension(nmax,mmax) :: zs,zbu,qu0
+    real(kind=4), intent(out), dimension(nmax,mmax) :: qu
+    integer, intent(in), dimension(nmax,mmax) :: kcu
+    real, intent(in), value :: dt 
+    integer :: n,m
+    real :: hu, frc
+
+    n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+    m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+   if (n <= nmax .and. m + 1 <= mmax) then
+    hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
+    frc = - g * hu * (zs(n, m + 1) - zs(n, m)) / dx
+    qu(n, m) = kcu(n, m) * (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu*hu * hu**expo))
+   end if
+      
+  end subroutine U
+end module mathOps
+
+program testSaxpy
+  use mathOps
+  use cudafor
+  use constants
+  implicit none
+  integer, parameter :: N = 4*1024 
+  real(kind=4) :: a
+  real(kind=4), dimension(:,:), allocatable :: zs,zbu,qu,qu0
+  real(kind=4), dimension(:,:), allocatable, device :: zs_d,zbu_d,qu_d,qu0_d
+  integer, dimension(:,:), allocatable :: kcu
+  integer, dimension(:,:), allocatable, device :: kcu_d
+
+  !real(kind=4), dimension(:,:),allocatable, device :: x_d, y_d 
+  !real(kind=4), dimension(:,:),allocatable :: x, y
+  
+  type(dim3) :: grid, tBlock
+  type (cudaEvent) :: startEvent, stopEvent
+  real :: time
+  integer :: istat, sharedblock
+  
+  !allocate(x(N,N),y(N,N))
+  allocate(zs(N,N),zbu(N,N),qu(N,N),qu0(N,N),kcu(N,N))
+
+  tBlock = dim3(32,32,1)
+  grid = dim3(ceiling(real(N)/tBlock%x),ceiling(real(N)/tBlock%y),1)
+  
+  istat = cudaEventCreate(startEvent)
+  istat = cudaEventCreate(stopEvent)
+  zs = 0; zbu = -10; qu = 0; qu0 = 0; kcu = 1
+  zs_d = zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
+  !x = 1.0; y = 2.0; a = 2.0
+  !x_d = x; y_d = y
+  istat = cudaEventRecord(startEvent, 0)
+  !call saxpy<<<grid, tblock >>>(n,n,x_d, y_d, a)
+  call U<<<grid, tblock >>>(n,n,zs_d,zbu_d,qu_d,qu0_d,kcu_d,dt)
+  istat = cudaEventRecord(stopEvent, 0)
+  istat = cudaEventSynchronize(stopEvent)
+  istat = cudaEventElapsedTime(time, startEvent, stopEvent)
+
+ ! y = y_d
+ ! write(*,*) 'Max error: ', maxval(abs(y-4.0))
+  write(*,*) 'Time (ms): ', time
+  write(*,*) 'Effective Bandwidth (GB/s): ', N*N*4*3/time/10**6
+
+  istat = cudaEventDestroy(startEvent)
+  istat = cudaEventDestroy(stopEvent)
+
+end program testSaxpy
