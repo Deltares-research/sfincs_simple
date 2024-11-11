@@ -95,7 +95,7 @@ program testSaxpy
    use cudafor
    use constants
    implicit none
-   integer :: N, M, nt, num_args, ix
+   integer :: N, M, nt, num_args, ix, i, j
    character(len=12), dimension(:), allocatable :: args
    real(kind=4) :: a
    real(kind=4), dimension(:, :), allocatable :: zs, zbu, qu, qu0
@@ -132,10 +132,30 @@ program testSaxpy
 
    istat = cudaEventCreate(startEvent)
    istat = cudaEventCreate(stopEvent)
-   zs = 0; zbu = -10; qu = 0; qu0 = 0; kcu = 1
-   kcs = 1; zbv = -10; qv = 0; qv0 = 0; kcv = 1
-   zs_d = zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
+   zs = 0;  zbu = -10; qu = 0; qu0 = 0; kcu = 0
+   kcs = 1; zbv = -10; qv = 0; qv0 = 0; kcv = 0
+   
+   ! Set mask values
+   kcs(1:n, 1) = 0
+   kcs(1:n, m) = 0
+   kcs(1, 1:m) = 0
+   kcs(n, 1:m) = 0
+   
+   ! Compute bed level at u and v points and set mask
+   do i = 1, m - 1
+      do j = 1, n - 1
+         if (kcs(i, j) == 1 .and. kcs(i, j + 1)) then
+             kcu(i, j) = 1
+         end if
+         if (kcs(i, j) == 1 .and. kcs(i + 1, j)) then
+            kcv(i, j) = 1
+         end if
+      end do
+   end do
+   
+   zs_d =   zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
    kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
+   
    !x = 1.0; y = 2.0; a = 2.0
    !x_d = x; y_d = y
    !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
@@ -153,7 +173,7 @@ program testSaxpy
    ! y = y_d
    ! write(*,*) 'Max error: ', maxval(abs(y-4.0))
    write (*, *) 'Time (ms): ', time
-   write (*, *) 'Effective Bandwidth (GB/s): ', N * N * 4 * 3 / time / 10**6
+   !write (*, *) 'Effective Bandwidth (GB/s): ', N * N * 4 * 3 / time / 10**6
 
    istat = cudaEventDestroy(startEvent)
    istat = cudaEventDestroy(stopEvent)
