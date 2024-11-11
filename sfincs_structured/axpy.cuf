@@ -90,7 +90,7 @@ contains
 
 end module mathOps
 
-program testSaxpy
+program sfincs_structured
    use mathOps
    use cudafor
    use constants
@@ -98,10 +98,10 @@ program testSaxpy
    integer :: N, M, nt, num_args, ix, i, j
    character(len=12), dimension(:), allocatable :: args
    real(kind=4) :: a
-   real(kind=4), dimension(:, :), allocatable :: zs, zbu, qu, qu0
-   real(kind=4), dimension(:, :), allocatable :: zbv, qv, qv0
-   real(kind=4), dimension(:, :), allocatable, device :: zs_d, zbu_d, qu_d, qu0_d
-   real(kind=4), dimension(:, :), allocatable, device :: zbv_d, qv_d, qv0_d
+   real(kind=4), dimension(:, :), allocatable :: zs, zbu, zbv
+   real(kind=4), dimension(:, :), allocatable :: qu, qu0, qv, qv0
+   real(kind=4), dimension(:, :), allocatable, device :: qv_d, qv0_d, qu_d, qu0_d
+   real(kind=4), dimension(:, :), allocatable, device :: zs_d, zbv_d, zbu_d
    integer, dimension(:, :), allocatable :: kcu, kcv, kcs
    integer, dimension(:, :), allocatable, device :: kcu_d, kcv_d, kcs_d
 
@@ -161,6 +161,8 @@ program testSaxpy
    !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
    istat = cudaEventRecord(startEvent, 0)
    do ix = 1, nt
+      qu0_d = qu_d
+      qv0_d = qv_d
       call U <<< grid, tblock >>> (N, M, zs_d, zbu_d, qu_d, qu0_d, kcu_d, dt)
       call V <<< grid, tblock >>> (N, M, zs_d, zbv_d, qv_d, qv0_d, kcv_d, dt)
       istat = cudaDeviceSynchronize()
@@ -178,4 +180,4 @@ program testSaxpy
    istat = cudaEventDestroy(startEvent)
    istat = cudaEventDestroy(stopEvent)
 
-end program testSaxpy
+end program sfincs_structured
