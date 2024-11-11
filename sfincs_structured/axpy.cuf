@@ -160,13 +160,17 @@ program sfincs_structured
    !x_d = x; y_d = y
    !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
    istat = cudaEventRecord(startEvent, 0)
-   do ix = 1, nt
-      qu0_d = qu_d
-      qv0_d = qv_d
+   !Two steps per loop to avoid explicitly swapping qu and qu0
+   do ix = 1, ceiling(nt/2.0)
       call U <<< grid, tblock >>> (N, M, zs_d, zbu_d, qu_d, qu0_d, kcu_d, dt)
       call V <<< grid, tblock >>> (N, M, zs_d, zbv_d, qv_d, qv0_d, kcv_d, dt)
       istat = cudaDeviceSynchronize()
       call update_zs <<< grid, tblock >>> (N, M, zs_d, qu_d, qv_d, kcs_d, dt)
+      istat = cudaDeviceSynchronize()
+      call U <<< grid, tblock >>> (N, M, zs_d, zbu_d, qu0_d, qu_d, kcu_d, dt)
+      call V <<< grid, tblock >>> (N, M, zs_d, zbv_d, qv0_d, qv_d, kcv_d, dt)
+      istat = cudaDeviceSynchronize()
+      call update_zs <<< grid, tblock >>> (N, M, zs_d, qu0_d, qv0_d, kcs_d, dt)
       istat = cudaDeviceSynchronize()
    end do
    istat = cudaEventRecord(stopEvent, 0)
