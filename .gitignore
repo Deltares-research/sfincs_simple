@@ -1,0 +1,17 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/sfincs_simple/FileContentIndex/b0336d3f-7e8f-40e9-8d5b-03300b6851c2.vsidx
+/.vs/sfincs_simple/FileContentIndex/dfb5856f-46e2-492b-915d-f5a386983371.vsidx
+/.vs/sfincs_simple/v17/.suo
+/.vs/sfincs_simple/v17/.wsuo
+/.vs/sfincs_simple/v17/DocumentLayout.backup.json
+/.vs/sfincs_simple/v17/DocumentLayout.json
+/.vs/VSWorkspaceState.json
+/sfincs_structured/a.out
+/sfincs_structured/constants.mod
+/sfincs_structured/mathops.mod
+/sfincs_structured/sfincs_structured
+/.vs/sfincs_simple/FileContentIndex/166bf265-17c2-4362-9667-8ef30a31d83c.vsidx
+/.vs/sfincs_simple/FileContentIndex/d1131c00-ab91-4ade-8b15-539ab2c13c21.vsidx
