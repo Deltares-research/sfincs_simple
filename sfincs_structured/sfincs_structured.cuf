@@ -1,12 +1,13 @@
     module constants
-    real(kind=4), parameter :: g = 9.81
-    real(kind=4), parameter :: zbunif = -10.0
-    real(kind=4), parameter :: manning = 0.02
-    real(kind=4), parameter :: dx = 10.0
-    real(kind=4), parameter :: dy = 10.0
-    real(kind=4), parameter :: gnavg2 = g * manning * manning
-    real(kind=4), parameter :: expo = 1.0 / 3.0
-    real(kind=4), parameter :: dt = dx / sqrt(-g * zbunif)
+    REAL(KIND=4), PARAMETER :: G = 9.81
+    REAL(KIND=4), PARAMETER :: ZBUNIF = -10.0
+    REAL(KIND=4), PARAMETER :: MANNING = 0.02
+    REAL(KIND=4), PARAMETER :: DX = 10.0
+    REAL(KIND=4), PARAMETER :: DY = 10.0
+    REAL(KIND=4), PARAMETER :: GNAVG2 = G * MANNING * MANNING
+    REAL(KIND=4), PARAMETER :: EXPO = 1.0 / 3.0
+    REAL(KIND=4), PARAMETER :: DT = DX / SQRT(-G * ZBUNIF)
+    INTEGER, PARAMETER :: BLOCK_SIZE = 32
     end module
 
     module mathOps
@@ -16,7 +17,7 @@
     implicit none
     integer, value, intent(in) :: nmax, mmax
     real(kind=4) :: x(nmax, mmax), y(nmax, mmax)
-    real(kind=4), shared :: x_shared_test(32, 32)
+    real(kind=4), shared :: x_shared_test(BLOCK_SIZE, BLOCK_SIZE)
     real, value :: a
     integer :: n, m
 
@@ -36,24 +37,22 @@
     real(kind=4), intent(in), dimension(nmax, mmax) :: zs, zbu, qu0
     real(kind=4), intent(out), dimension(nmax, mmax) :: qu
     integer, intent(in), dimension(nmax, mmax) :: kcu
-    real(kind=4), shared :: zs_shared(blockDim%x, blockDim%y)
+    real(kind=4), shared :: zs_shared(BLOCK_SIZE, BLOCK_SIZE)
     real, intent(in), value :: dt
-    integer :: n, m
+    integer :: n, m, i, j
     real :: hu, frc
-
-    n = (blockDim%x-1) * (blockIdx%x - 1) + threadIdx%x
-    m = (blockDim%y-1) * (blockIdx%y - 1) + threadIdx%y
-
+    i = threadIdx%x ; j = threadIdx%y
+    n = (blockDim%x-1) * (blockIdx%x - 1) + i
+    m = (blockDim%y-1) * (blockIdx%y - 1) + i
     if (n <= nmax .and. m <= mmax) then
-        zs_shared(threadIdx%x,threadIdx%y) =  zs(n,m)
+        zs_shared(i,j) =  zs(n,m)
     end if
     call syncthreads()
-    if (n <= nmax .and. m + 1 <= mmax .and. threadIdx%x < blockDim%x .and. threadIdx%y < blockDim%y) then
-        hu = 0.5 * (zs_shared(n, m + 1) + zs_shared(n, m)) - zbu(n, m)
-        frc = -g * hu * (zs_shared(n, m + 1) - zs_shared(n, m)) / dx
+    if (n <= nmax .and. m + 1 <= mmax .and. i < blockDim%x .and. j < blockDim%y) then
+        hu = 0.5 * (zs_shared(i, j + 1) + zs_shared(i, j)) - zbu(n, m)
+        frc = -g * hu * (zs_shared(i, j + 1) - zs_shared(i, j)) / dx
         qu(n, m) = kcu(n, m) * (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu * hu * hu**expo))
     end if
-
     end subroutine U
 
     attributes(global) subroutine V(nmax, mmax, zs, zbv, qv, qv0, kcv, dt)
@@ -63,22 +62,21 @@
     real(kind=4), intent(out), dimension(nmax, mmax) :: qv
     integer, intent(in), dimension(nmax, mmax) :: kcv
     real, intent(in), value :: dt
-    real(kind=4), shared :: zs_shared(blockDim%x, blockDim%y)
-    integer :: n, m
+    real(kind=4), shared :: zs_shared(BLOCK_SIZE, BLOCK_SIZE)
+    integer :: n, m, i, j
     real :: hv, frc
-
-    n = (blockDim%x-1) * (blockIdx%x - 1) + threadIdx%x
-    m = (blockDim%y-1) * (blockIdx%y - 1) + threadIdx%y
+    i = threadIdx%x ; j = threadIdx%y
+    n = (blockDim%x-1) * (blockIdx%x - 1) + i
+    m = (blockDim%y-1) * (blockIdx%y - 1) + j
     if (n <= nmax .and. m <= mmax) then
-        zs_shared(threadIdx%x,threadIdx%y) =  zs(n,m)
+        zs_shared(i,j) =  zs(n,m)
     end if
     call syncthreads()
-    if (n + 1 <= nmax .and. m <= mmax .and. threadIdx%x < blockDim%x .and. threadIdx%y < blockDim%y) then
-        hv = 0.5 * (zs_shared(n + 1, m) + zs_shared(n, m)) - zbv(n, m)
-        frc = -g * hv * (zs_shared(n + 1, m) - zs_shared(n, m)) / dy
+    if (n + 1 <= nmax .and. m <= mmax .and. i < blockDim%x .and. j < blockDim%y) then
+        hv = 0.5 * (zs_shared(i + 1, j) + zs_shared(i, j)) - zbv(n, m)
+        frc = -g * hv * (zs_shared(i + 1, j) - zs_shared(i, j)) / dy
         qv(n, m) = kcv(n, m) * (qv0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
     end if
-
     end subroutine V
 
     attributes(global) subroutine update_zs(nmax, mmax, zs, qu, qv, kcs, dt)
@@ -88,18 +86,18 @@
     real(kind=4), intent(out), dimension(nmax, mmax) :: zs
     integer, intent(in), dimension(nmax, mmax) :: kcs
     real, intent(in), value :: dt
-    integer :: n, m
-    real(kind=4), shared, dimension(blockDim%x, blockDim%y) :: qu_shared, qv_shared
-
-    n = (blockDim%x-1) * (blockIdx%x - 1) + threadIdx%x !Different from U & V!
-    m = (blockDim%y-1) * (blockIdx%y - 1) + threadIdx%y
+    integer :: n, m, i , j
+    real(kind=4), shared, dimension(BLOCK_SIZE,BLOCK_SIZE) :: qu_shared, qv_shared
+    i = threadIdx%x ; j = threadIdx%y
+    n = (blockDim%x-1) * (blockIdx%x - 1) + i
+    m = (blockDim%y-1) * (blockIdx%y - 1) + j
     if (n <= nmax .and. m <= mmax) then
-        qu_shared(threadIdx%x,threadIdx%y) =  qu(n,m)
-        qv_shared(threadIdx%x,threadIdx%y) =  qv(n,m)
+        qu_shared(i,j) =  qu(n,m)
+        qv_shared(i,j) =  qv(n,m)
     end if
     call syncthreads()
-    if (n <= nmax .and. m <= mmax .and. threadIdx%x > 1 .and. threadIdx%y > 1) then
-        zs(n, m) = zs(n, m) + kcs(n, m) * dt * ((qu_shared(n, m - 1) - qu_shared(n, m)) / dx + (qv_shared(n - 1, m) - qv_shared(n, m)) / dy)
+    if (n <= nmax .and. m <= mmax .and. i > 1 .and. j > 1) then
+        zs(n, m) = zs(n, m) + kcs(n, m) * dt * ((qu_shared(i, j - 1) - qu_shared(i, j)) / dx + (qv_shared(i - 1, j) - qv_shared(i, j)) / dy)
     end if
 
     end subroutine update_zs
@@ -143,7 +141,7 @@
     allocate (zs(N, M), zbu(N, M), qu(N, M), qu0(N, M), kcu(N, M))
     allocate (kcs(N, M), zbv(N, M), qv(N, M), qv0(N, M), kcv(N, M))
 
-    tBlock = dim3(32, 32, 1)
+    tBlock = dim3(BLOCK_SIZE, BLOCK_SIZE, 1)
     grid = dim3(ceiling(real(N) / (tBlock%x-1)), ceiling(real(N) / (tBlock%y-1)), 1)
 
     istat = cudaEventCreate(startEvent)
