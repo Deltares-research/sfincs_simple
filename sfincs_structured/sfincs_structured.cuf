@@ -30,8 +30,67 @@
     end if
 
     end subroutine saxpy
+    
+       attributes(global) subroutine U(nmax, mmax, zs, zbu, qu, qu0, kcu, dt)
+      implicit none
+      integer, value, intent(in) :: nmax, mmax
+      real(kind=4), intent(in), dimension(nmax, mmax) :: zs, zbu, qu0
+      real(kind=4), intent(out), dimension(nmax, mmax) :: qu
+      integer, intent(in), dimension(nmax, mmax) :: kcu
+      real, intent(in), value :: dt
+      integer :: n, m
+      real :: hu, frc
 
-    attributes(global) subroutine U(nmax, mmax, zs, zbu, qu, qu0, kcu, dt)
+      n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+      m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+      if (n <= nmax .and. m + 1 <= mmax) then
+         hu = 0.5 * (zs(n, m + 1) + zs(n, m)) - zbu(n, m)
+         frc = -g * hu * (zs(n, m + 1) - zs(n, m)) / dx
+         qu(n, m) = kcu(n, m) * (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu * hu * hu**expo))
+      end if
+
+   end subroutine U
+
+   attributes(global) subroutine V(nmax, mmax, zs, zbv, qv, qv0, kcv, dt)
+      implicit none
+      integer, value, intent(in) :: nmax, mmax
+      real(kind=4), intent(in), dimension(nmax, mmax) :: zs, zbv, qv0
+      real(kind=4), intent(out), dimension(nmax, mmax) :: qv
+      integer, intent(in), dimension(nmax, mmax) :: kcv
+      real, intent(in), value :: dt
+      integer :: n, m
+      real :: hv, frc
+
+      n = blockDim%x * (blockIdx%x - 1) + threadIdx%x
+      m = blockDim%y * (blockIdx%y - 1) + threadIdx%y
+      if (n + 1 <= nmax .and. m <= mmax) then
+         hv = 0.5 * (zs(n + 1, m) + zs(n, m)) - zbv(n, m)
+         frc = -g * hv * (zs(n + 1, m) - zs(n, m)) / dy
+         qv(n, m) = kcv(n, m) * (qv0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
+      end if
+
+   end subroutine V
+
+   attributes(global) subroutine update_zs(nmax, mmax, zs, qu, qv, kcs, dt)
+      implicit none
+      integer, value, intent(in) :: nmax, mmax
+      real(kind=4), intent(in), dimension(nmax, mmax) :: qu, qv
+      real(kind=4), intent(out), dimension(nmax, mmax) :: zs
+      integer, intent(in), dimension(nmax, mmax) :: kcs
+      real, intent(in), value :: dt
+      integer :: n, m
+
+      n = blockDim%x * (blockIdx%x - 1) + threadIdx%x + 1 !Different from U & V!
+      m = blockDim%y * (blockIdx%y - 1) + threadIdx%y + 1 
+
+      if (n <= nmax .and. m <= mmax) then
+         zs(n, m) = zs(n, m) + kcs(n, m) * dt * ((qu(n, m - 1) - qu(n, m)) / dx + (qv(n - 1, m) - qv(n, m)) / dy)
+      end if
+
+   end subroutine update_zs
+
+
+    attributes(global) subroutine U_shared(nmax, mmax, zs, zbu, qu, qu0, kcu, dt)
     implicit none
     integer, value, intent(in) :: nmax, mmax
     real(kind=4), intent(in), dimension(nmax, mmax) :: zs, zbu, qu0
@@ -53,9 +112,9 @@
         frc = -g * hu * (zs_shared(i, j + 1) - zs_shared(i, j)) / dx
         qu(n, m) = kcu(n, m) * (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu * hu * hu**expo))
     end if
-    end subroutine U
+    end subroutine U_shared
 
-    attributes(global) subroutine V(nmax, mmax, zs, zbv, qv, qv0, kcv, dt)
+    attributes(global) subroutine V_shared(nmax, mmax, zs, zbv, qv, qv0, kcv, dt)
     implicit none
     integer, value, intent(in) :: nmax, mmax
     real(kind=4), intent(in), dimension(nmax, mmax) :: zs, zbv, qv0
@@ -77,9 +136,9 @@
         frc = -g * hv * (zs_shared(i + 1, j) - zs_shared(i, j)) / dy
         qv(n, m) = kcv(n, m) * (qv0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
     end if
-    end subroutine V
+    end subroutine V_shared
 
-    attributes(global) subroutine update_zs(nmax, mmax, zs, qu, qv, kcs, dt)
+    attributes(global) subroutine update_zs_shared(nmax, mmax, zs, qu, qv, kcs, dt)
     implicit none
     integer, value, intent(in) :: nmax, mmax
     real(kind=4), intent(in), dimension(nmax, mmax) :: qu, qv
@@ -100,7 +159,7 @@
         zs(n, m) = zs(n, m) + kcs(n, m) * dt * ((qu_shared(i, j - 1) - qu_shared(i, j)) / dx + (qv_shared(i - 1, j) - qv_shared(i, j)) / dy)
     end if
 
-    end subroutine update_zs
+    end subroutine update_zs_shared
 
     end module mathOps
 
@@ -118,13 +177,10 @@
     real(kind=4), dimension(:, :), allocatable, device :: zs_d, zbv_d, zbu_d
     integer, dimension(:, :), allocatable :: kcu, kcv, kcs
     integer, dimension(:, :), allocatable, device :: kcu_d, kcv_d, kcs_d
-
-    !real(kind=4), dimension(:,:),allocatable, device :: x_d, y_d
-    !real(kind=4), dimension(:,:),allocatable :: x, y
-
-    type(dim3) :: grid, tBlock
+    
+    type(dim3) :: grid, grid_shared, tBlock
     type(cudaEvent) :: startEvent, stopEvent
-    real :: time
+    real :: time, time_shared
     integer :: istat, sharedblock
 
     num_args = command_argument_count()
@@ -132,17 +188,16 @@
     do ix = 1, num_args
         call get_command_argument(ix, args(ix))
     end do
-    !
     read (args(1), *) n
     read (args(2), *) m
     read (args(3), *) nt
 
-    !allocate(x(N,M),y(N,M))
     allocate (zs(N, M), zbu(N, M), qu(N, M), qu0(N, M), kcu(N, M))
     allocate (kcs(N, M), zbv(N, M), qv(N, M), qv0(N, M), kcv(N, M))
 
     tBlock = dim3(BLOCK_SIZE, BLOCK_SIZE, 1)
     grid = dim3(ceiling(real(N) / (tBlock%x-1)), ceiling(real(N) / (tBlock%y-1)), 1)
+    grid_shared = dim3(ceiling(real(N) / (tBlock%x)), ceiling(real(N) / (tBlock%y)), 1)
 
     istat = cudaEventCreate(startEvent)
     istat = cudaEventCreate(stopEvent)
@@ -170,9 +225,6 @@
     zs_d =   zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
     kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
 
-    !x = 1.0; y = 2.0; a = 2.0
-    !x_d = x; y_d = y
-    !call saxpy<<<grid, tblock >>>(N,M,x_d, y_d, a)
     istat = cudaEventRecord(startEvent, 0)
     !Two steps per loop to avoid explicitly swapping qu and qu0
     do ix = 1, ceiling(nt/2.0)
@@ -190,9 +242,32 @@
     istat = cudaEventRecord(stopEvent, 0)
     istat = cudaEventSynchronize(stopEvent)
     istat = cudaEventElapsedTime(time, startEvent, stopEvent)
+    
+    zs_d =   zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
+    kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
+
+    istat = cudaEventRecord(startEvent, 0)
+    !Two steps per loop to avoid explicitly swapping qu and qu0
+    do ix = 1, ceiling(nt/2.0)
+        call U_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbu_d, qu_d, qu0_d, kcu_d, dt)
+        call V_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbv_d, qv_d, qv0_d, kcv_d, dt)
+        istat = cudaDeviceSynchronize()
+        call update_zs <<< grid_shared, tblock >>> (N, M, zs_d, qu_d, qv_d, kcs_d, dt)
+        istat = cudaDeviceSynchronize()
+        call U_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbu_d, qu0_d, qu_d, kcu_d, dt)
+        call V_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbv_d, qv0_d, qv_d, kcv_d, dt)
+        istat = cudaDeviceSynchronize()
+        call update_zs_shared <<< grid_shared, tblock >>> (N, M, zs_d, qu0_d, qv0_d, kcs_d, dt)
+        istat = cudaDeviceSynchronize()
+    end do
+    istat = cudaEventRecord(stopEvent, 0)
+    istat = cudaEventSynchronize(stopEvent)
+    istat = cudaEventElapsedTime(time_shared, startEvent, stopEvent)
     ! y = y_d
     ! write(*,*) 'Max error: ', maxval(abs(y-4.0))
     write (*, *) 'Time (ms): ', time
+    write (*, *) 'Time_shared (ms): ', time_shared
+    write (*, *) 'speedup: ', int(1000*(1d0-1d0*time_shared/time))/10d0, ' %'
     !write (*, *) 'Effective Bandwidth (GB/s): ', N * N * 4 * 3 / time / 10**6
 
     istat = cudaEventDestroy(startEvent)
