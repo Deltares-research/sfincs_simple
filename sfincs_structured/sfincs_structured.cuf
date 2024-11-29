@@ -252,7 +252,7 @@
         call U_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbu_d, qu_d, qu0_d, kcu_d, dt)
         call V_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbv_d, qv_d, qv0_d, kcv_d, dt)
         istat = cudaDeviceSynchronize()
-        call update_zs <<< grid_shared, tblock >>> (N, M, zs_d, qu_d, qv_d, kcs_d, dt)
+        call update_zs_shared <<< grid_shared, tblock >>> (N, M, zs_d, qu_d, qv_d, kcs_d, dt)
         istat = cudaDeviceSynchronize()
         call U_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbu_d, qu0_d, qu_d, kcu_d, dt)
         call V_shared <<< grid_shared, tblock >>> (N, M, zs_d, zbv_d, qv0_d, qv_d, kcv_d, dt)
