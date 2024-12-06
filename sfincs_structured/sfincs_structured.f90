@@ -106,7 +106,7 @@ program sfincs_structured
    !
    call system_clock(count0, count_rate, count_max)
    !
-   do it = 1, ceiling(nt/2)   
+   do it = 1,nt
       !$omp target teams loop collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
          do n = 1, nmax
