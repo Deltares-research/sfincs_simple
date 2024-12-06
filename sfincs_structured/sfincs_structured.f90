@@ -106,92 +106,54 @@ program sfincs_structured
    !
    call system_clock(count0, count_rate, count_max)
    !
-   do it = 1, nt   
-      !
-      !$acc parallel, present( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv ), num_gangs( 512 ), vector_length( 128 )
-      !
-      ! Momentum
-      !
-      if (copyq) then
-      !$omp parallel &
-      !$omp private ( n, m )
-      !$omp do
-      !$acc loop independent gang
-      do m = 1, mmax
-         !$acc loop independent vector
-         do n = 1, nmax
-            qu0(n, m) = qu(n, m)
-            qv0(n, m) = qv(n, m)
-         enddo		 
-      enddo
-      !$omp end do
-      !$omp end parallel
-      endif
-      !
-      if (momentum) then
-      !$omp parallel &
-      !$omp private ( n, m, hu, hv, frc )
-      !$omp do
-      !$acc loop independent gang
+   do it = 1, ceiling(nt/2)   
+      !$omp target teams loop collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
-         !$acc loop independent vector
          do n = 1, nmax
-            !
-	         ! U
-            ! 
             if (kcu(n, m) == 1) then
-               !
                hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
                frc = - g * hu * (zs(n, m + 1) - zs(n, m)) / dx
                qu(n, m) = (qu0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu0(n, m)) / (hu**2 * hu**expo))
-               !
             endif
-	         !
-            ! V
-            !  
             if (kcv(n, m) == 1) then
-               !
                hv = 0.5 * ( zs(n + 1, m) + zs(n, m) ) - zbv(n, m)
                frc = - g * hv * (zs(n + 1, m) - zs(n, m)) / dy
                qv(n, m) = (qv0(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv0(n, m)) / (hv**2 * hv**expo))
-               !
             endif
-            !
          enddo		 
       enddo
-      !$omp end do
-      !$omp end parallel
-      endif
-      !
-      ! Continuity
-      !
-      if (continuity) then
-      !$omp parallel &
-      !$omp private ( n, m )
-      !$omp do
-      !$acc loop independent gang
+      !$omp target teams loop collapse(2) private ( n, m )
       do m = 1, mmax
-         !$acc loop independent vector
          do n = 1, nmax
-	         !
             if (kcs(n, m) == 1) then
-               !
                zs(n, m) = zs(n, m) + dt * ( (qu(n, m - 1) - qu(n, m)) / dx + (qv(n - 1, m) - qv(n, m)) / dy ) 
-               !
 	 	      endif
-            !
+         enddo		 
+      enddo          
+      !$omp target teams loop collapse(2) private ( n, m, hu, hv, frc )
+      do m = 1, mmax 
+         do n = 1, nmax
+            if (kcu(n, m) == 1) then
+               hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
+               frc = - g * hu * (zs(n, m + 1) - zs(n, m)) / dx
+               qu0(n, m) = (qu(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qu(n, m)) / (hu**2 * hu**expo))
+            endif
+            if (kcv(n, m) == 1) then
+               hv = 0.5 * ( zs(n + 1, m) + zs(n, m) ) - zbv(n, m)
+               frc = - g * hv * (zs(n + 1, m) - zs(n, m)) / dy
+               qv0(n, m) = (qv(n, m) + frc * dt) / (1.0 + gnavg2 * dt * abs(qv(n, m)) / (hv**2 * hv**expo))
+            endif
+         enddo		 
+      enddo
+      !$omp target teams loop collapse(2) private ( n, m )
+      do m = 1, mmax
+         do n = 1, nmax
+            if (kcs(n, m) == 1) then
+               zs(n, m) = zs(n, m) + dt * ( (qu0(n, m - 1) - qu0(n, m)) / dx + (qv0(n - 1, m) - qv0(n, m)) / dy ) 
+	 	      endif
          enddo		 
       enddo    
-      !$omp end do
-      !$omp end parallel
-      endif
-      !
-      !$acc end parallel
-      !
    enddo
-   !
-   !$acc end data
-   !
    call system_clock(count1, count_rate, count_max)
    !
    ttotal = 1.0 * (count1 - count0) / count_rate
