@@ -10,8 +10,17 @@ program sfincs_structured
    integer :: n, m, nmax, mmax, it, nt
    integer*8  :: count0, count1, count_rate, count_max
    !
-   real*4 :: g, zbunif, manning, dt, dx, dy, gnavg2, hu, hv, frc
+   real*4 :: hu, hv, frc
    real*8 :: ttotal
+      
+   real*4, parameter :: zbunif  = - 10.0
+   real*4, parameter :: manning = 0.02
+   real*4, parameter :: dx      = 10.0
+   real*4, parameter :: dy      = 10.0
+   real*4, parameter :: g       = 9.81
+   real*4, parameter :: dt = dx / sqrt(- g * zbunif)
+   real*4, parameter :: gnavg2 = g * manning**2
+   real*4, parameter :: expo = 1.0 / 3.0
    !
    logical :: copyq, momentum, continuity
    !
@@ -28,8 +37,6 @@ program sfincs_structured
    real*4, dimension(:,:), allocatable :: qu0
    real*4, dimension(:,:), allocatable :: qv0
    !
-   real*4, parameter :: expo = 1.0 / 3.0
-   !integer, parameter :: expo = 0   
    !
    !call acc_init( acc_device_nvidia )
    !
@@ -48,16 +55,7 @@ program sfincs_structured
    read(args(5),*)momentum
    read(args(6),*)continuity
    !
-   zbunif  = - 10.0
-   manning = 0.02
-   dx      = 10.0
-   dy      = 10.0
-   !
-   g       = 9.81
-   !
-   dt = dx / sqrt(- g * zbunif)
-   !
-   gnavg2 = g * manning**2
+
    !
    allocate(kcs(nmax, mmax))
    allocate(kcu(nmax, mmax))
@@ -103,11 +101,11 @@ program sfincs_structured
    enddo  	  
    !
    !$acc data, copyin( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv )
-   !
+   !$omp target data map( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv)
    call system_clock(count0, count_rate, count_max)
    !
    do it = 1,nt
-      !$omp target teams loop collapse(2) private ( n, m, hu, hv, frc )
+      !$omp target teams distribute parallel do collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
          do n = 1, nmax
             if (kcu(n, m) == 1) then
@@ -122,7 +120,7 @@ program sfincs_structured
             endif
          enddo		 
       enddo
-      !$omp target teams loop collapse(2) private ( n, m )
+      !$omp target teams distribute parallel do collapse(2) private ( n, m )
       do m = 1, mmax
          do n = 1, nmax
             if (kcs(n, m) == 1) then
@@ -130,7 +128,7 @@ program sfincs_structured
 	 	      endif
          enddo		 
       enddo          
-      !$omp target teams loop collapse(2) private ( n, m, hu, hv, frc )
+      !$omp target teams distribute parallel do collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
          do n = 1, nmax
             if (kcu(n, m) == 1) then
@@ -145,7 +143,7 @@ program sfincs_structured
             endif
          enddo		 
       enddo
-      !$omp target teams loop collapse(2) private ( n, m )
+      !$omp target teams distribute parallel do collapse(2) private ( n, m )
       do m = 1, mmax
          do n = 1, nmax
             if (kcs(n, m) == 1) then
@@ -155,7 +153,7 @@ program sfincs_structured
       enddo    
    enddo
    call system_clock(count1, count_rate, count_max)
-   !
+   !$omp end target data
    ttotal = 1.0 * (count1 - count0) / count_rate
    !
    write(*,'(f10.4)') ttotal
