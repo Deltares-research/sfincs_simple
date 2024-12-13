@@ -105,8 +105,11 @@ program sfincs_structured
    call system_clock(count0, count_rate, count_max)
    !
    do it = 1,nt
+      !$acc parallel, present( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv ), num_gangs( 512 ), vector_length( 128 )
+      !$acc loop independent gang 
       !$omp target teams distribute parallel do collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
+         !$acc loop independent vector
          do n = 1, nmax
             if (kcu(n, m) == 1) then
                hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
@@ -120,16 +123,20 @@ program sfincs_structured
             endif
          enddo		 
       enddo
+      !$acc loop independent gang 
       !$omp target teams distribute parallel do collapse(2) private ( n, m )
       do m = 1, mmax
+         !$acc loop independent vector
          do n = 1, nmax
             if (kcs(n, m) == 1) then
                zs(n, m) = zs(n, m) + dt * ( (qu(n, m - 1) - qu(n, m)) / dx + (qv(n - 1, m) - qv(n, m)) / dy ) 
 	 	      endif
          enddo		 
-      enddo          
+      enddo       
+      !$acc loop independent gang 
       !$omp target teams distribute parallel do collapse(2) private ( n, m, hu, hv, frc )
       do m = 1, mmax 
+         !$acc loop independent vector 
          do n = 1, nmax
             if (kcu(n, m) == 1) then
                hu = 0.5 * ( zs(n, m + 1) + zs(n, m) ) - zbu(n, m)
@@ -143,16 +150,22 @@ program sfincs_structured
             endif
          enddo		 
       enddo
+      !$acc loop independent gang 
       !$omp target teams distribute parallel do collapse(2) private ( n, m )
       do m = 1, mmax
+         !$acc loop independent vector 
          do n = 1, nmax
             if (kcs(n, m) == 1) then
                zs(n, m) = zs(n, m) + dt * ( (qu0(n, m - 1) - qu0(n, m)) / dx + (qv0(n - 1, m) - qv0(n, m)) / dy ) 
 	 	      endif
          enddo		 
-      enddo    
+      enddo   
+      
+      !$acc end parallel
    enddo
    call system_clock(count1, count_rate, count_max)
+
+   !$acc end data
    !$omp end target data
    ttotal = 1.0 * (count1 - count0) / count_rate
    !
