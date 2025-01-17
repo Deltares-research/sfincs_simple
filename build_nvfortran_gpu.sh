@@ -6,9 +6,9 @@
 
 module load nvidia
 
-nvfortran -mp=gpu -Minfo=mp -fast sfincs_structured.f90 -o sfincs_structured_OMP -O3
-nvfortran -acc=gpu -Minfo=accel -fast sfincs_structured.f90 -o sfincs_structured_ACC -O3
-nvfortran -fast sfincs_structured.cuf -o sfincs_structured_cuda -O3
+nvfortran -mp=gpu -fast sfincs_structured/sfincs_structured.f90 -o sfincs_structured_OMP -O3
+nvfortran -acc=gpu -fast sfincs_structured/sfincs_structured.f90 -o sfincs_structured_ACC -O3
+nvfortran -fast sfincs_structured/sfincs_structured_cuda.cuf -o sfincs_structured_cuda -O3
 
 ./sfincs_structured_OMP 64 64 1000 T T T     > OMP_0064.txt
 ./sfincs_structured_OMP 128 128 1000 T T T   > OMP_0128.txt
@@ -37,3 +37,4 @@ nvfortran -fast sfincs_structured.cuf -o sfincs_structured_cuda -O3
 ./sfincs_structured_cuda 4096 8192 1000 T T T > cuda_4096.txt
 ./sfincs_structured_cuda 8192 8192 1000 T T T > cuda_8192.txt
 
+aggregate.sh
