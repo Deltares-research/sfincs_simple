@@ -242,7 +242,7 @@
     istat = cudaEventRecord(stopEvent, 0)
     istat = cudaEventSynchronize(stopEvent)
     istat = cudaEventElapsedTime(time, startEvent, stopEvent)
-    write(*,'(f10.4)') time
+    write(*,'(f10.4)') time/1000.0
     istat = cudaEventDestroy(startEvent)
     istat = cudaEventDestroy(stopEvent)
 
