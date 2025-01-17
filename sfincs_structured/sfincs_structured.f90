@@ -104,7 +104,7 @@ program sfincs_structured
    !$omp target data map( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv)
    call system_clock(count0, count_rate, count_max)
    !
-   do it = 1,nt
+   do it = 1,ceiling(nt/2.0)
       !$acc parallel, present( qu0, qv0, qu, qv, kcs, kcu, kcv, zs, zbu, zbv ), num_gangs( 512 ), vector_length( 128 )
       !$acc loop independent gang 
       !$omp target teams distribute parallel do collapse(2) private ( n, m, hu, hv, frc )
