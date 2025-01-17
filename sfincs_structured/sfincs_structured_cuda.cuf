@@ -221,27 +221,6 @@
             end if
         end do
     end do
-
-    zs_d =   zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
-    kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
-
-    istat = cudaEventRecord(startEvent, 0)
-    !Two steps per loop to avoid explicitly swapping qu and qu0
-    do ix = 1, ceiling(nt/2.0)
-        call U <<< grid, tblock >>> (N, M, zs_d, zbu_d, qu_d, qu0_d, kcu_d, dt)
-        call V <<< grid, tblock >>> (N, M, zs_d, zbv_d, qv_d, qv0_d, kcv_d, dt)
-        istat = cudaDeviceSynchronize()
-        call update_zs <<< grid, tblock >>> (N, M, zs_d, qu_d, qv_d, kcs_d, dt)
-        istat = cudaDeviceSynchronize()
-        call U <<< grid, tblock >>> (N, M, zs_d, zbu_d, qu0_d, qu_d, kcu_d, dt)
-        call V <<< grid, tblock >>> (N, M, zs_d, zbv_d, qv0_d, qv_d, kcv_d, dt)
-        istat = cudaDeviceSynchronize()
-        call update_zs <<< grid, tblock >>> (N, M, zs_d, qu0_d, qv0_d, kcs_d, dt)
-        istat = cudaDeviceSynchronize()
-    end do
-    istat = cudaEventRecord(stopEvent, 0)
-    istat = cudaEventSynchronize(stopEvent)
-    istat = cudaEventElapsedTime(time, startEvent, stopEvent)
     
     zs_d =   zs; zbu_d = zbu; qu_d = qu; qu0_d = qu0; kcu_d = kcu
     kcs_d = kcs; zbv_d = zbv; qv_d = qv; qv0_d = qv0; kcv_d = kcv
@@ -262,14 +241,8 @@
     end do
     istat = cudaEventRecord(stopEvent, 0)
     istat = cudaEventSynchronize(stopEvent)
-    istat = cudaEventElapsedTime(time_shared, startEvent, stopEvent)
-    ! y = y_d
-    ! write(*,*) 'Max error: ', maxval(abs(y-4.0))
-    write (*, *) 'Time (ms): ', time
-    write (*, *) 'Time_shared (ms): ', time_shared
-    write (*, *) 'speedup: ', int(1000*(1d0-1d0*time_shared/time))/10d0, ' %'
-    !write (*, *) 'Effective Bandwidth (GB/s): ', N * N * 4 * 3 / time / 10**6
-
+    istat = cudaEventElapsedTime(time, startEvent, stopEvent)
+    write(*,'(f10.4)') time
     istat = cudaEventDestroy(startEvent)
     istat = cudaEventDestroy(stopEvent)
 
