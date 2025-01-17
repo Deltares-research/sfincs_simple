@@ -37,4 +37,4 @@ nvfortran -fast sfincs_structured/sfincs_structured_cuda.cuf -o sfincs_structure
 ./sfincs_structured_cuda 4096 8192 1000 T T T > cuda_4096.txt
 ./sfincs_structured_cuda 8192 8192 1000 T T T > cuda_8192.txt
 
-aggregate.sh
+bash ./aggregate.sh
